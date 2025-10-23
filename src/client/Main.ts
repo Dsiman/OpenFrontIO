@@ -47,6 +47,19 @@ import "./styles.css";
 
 declare global {
   interface Window {
+    turnstile: {
+      render: (
+        container: string,
+        options: {
+          sitekey: string;
+          callback: (token: string) => void;
+          "error-callback": () => void;
+          "expired-callback": () => void;
+          theme: string;
+          size: string;
+        },
+      ) => string;
+    };
     PageOS: {
       session: {
         newPageView: () => void;
@@ -74,6 +87,7 @@ declare global {
   interface DocumentEventMap {
     "join-lobby": CustomEvent<JoinLobbyEvent>;
     "kick-player": CustomEvent;
+    "turnstile-verified": CustomEvent;
   }
 }
 
@@ -413,6 +427,23 @@ class Client {
       }
     });
 
+    window.turnstile.render("#turnstile-container", {
+      sitekey: "1x00000000000000000000AA", // Test key for local development
+      callback: function (token) {
+        console.log("Success:", token);
+        // Send token to your backend for verification
+        verifyToken(token);
+      },
+      "error-callback": function () {
+        console.error("Turnstile error occurred");
+      },
+      "expired-callback": function () {
+        console.log("Token expired, user needs to re-verify");
+      },
+      theme: "light", // or "dark"
+      size: "normal", // or "compact"
+    });
+
     if (this.userSettings.darkMode()) {
       document.documentElement.classList.add("dark");
     } else {
@@ -746,4 +777,36 @@ function hasAllowedFlare(
   const flares = userMeResponse.player.flares;
   if (flares === undefined) return false;
   return allowed.length === 0 || allowed.some((f) => flares.includes(f));
+}
+
+async function verifyToken(token: string) {
+  try {
+    const config = await getServerConfigFromClient();
+    const response = await fetch(`${config.jwtIssuer()}/turnstile/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        turnstileToken: token,
+        persistentId: getPersistentID(),
+      }),
+    });
+    if (response.ok) {
+      console.log("Turnstile verification successful");
+      document.dispatchEvent(
+        new CustomEvent("turnstile-verified", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      // Hide the turnstile container
+      const turnstileContainer = document.querySelector("#turnstile-container");
+      if (turnstileContainer instanceof HTMLElement) {
+        turnstileContainer.style.display = "none";
+      }
+    } else {
+      console.error("Turnstile verification failed:", response.statusText);
+    }
+  } catch (error) {
+    console.error("Verification failed:", error);
+  }
 }

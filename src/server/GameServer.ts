@@ -140,11 +140,14 @@ export class GameServer {
         creatorID: this.LobbyCreatorID,
       });
     }
+
+    const isRejoin = lastTurn > 0;
+
     this.log.info("client (re)joining game", {
       clientID: client.clientID,
       persistentID: client.persistentID,
       clientIP: ipAnonymize(client.ip),
-      isRejoin: lastTurn > 0,
+      isRejoin,
     });
 
     if (
@@ -201,6 +204,19 @@ export class GameServer {
       client.reportedWinner = existing.reportedWinner;
 
       this.activeClients = this.activeClients.filter((c) => c !== existing);
+    } else {
+      // No existing client found, this is a new client
+      if (isRejoin) {
+        this.log.warn(
+          "New client attempted to re-join a game they are not in",
+          {
+            clientID: client.clientID,
+            persistentID: client.persistentID,
+            clientIP: ipAnonymize(client.ip),
+          },
+        );
+        return;
+      }
     }
 
     // Client connection accepted
@@ -383,7 +399,7 @@ export class GameServer {
     });
   }
 
-  public start() {
+  public async start() {
     if (this._hasStarted) {
       return;
     }
